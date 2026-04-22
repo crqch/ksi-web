@@ -1,0 +1,18 @@
+{
+  "imie": "Jan",
+  "nazwisko": "Kowalski",
+  "wiek": 10,
+  "wzrost": 150.2,
+  "rodzice": [
+    {
+      "lataSwietlne": 1000
+    },
+    {
+      "oceny": {
+        "jpol": 1,
+        "matematyka": 2,
+        "informatyka": 0
+      }
+    }
+  ]
+}
