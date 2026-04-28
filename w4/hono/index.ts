@@ -1,4 +1,5 @@
 import { Hono } from "hono";
+import { adminRouter } from "./routes/admin";
 
 // Inicjalizujemy aplikację przez utworzenie nowej instancji Hono
 const app = new Hono();
@@ -44,5 +45,7 @@ app.route(
       return c.json({ success: true });
     }),
 );
+
+app.route("/admin", adminRouter);
 
 export default app;
