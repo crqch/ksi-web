@@ -125,10 +125,82 @@ Jeśli coś się zepsuje to łatwo można to zauważyć bez konieczności ręczn
 
 #text("Rozbudowa aplikacji REST API", size: 20pt)
 
-Nadchodzi
+#l(1)
+Utwórz klasę `UsersManager` a następnie korzystając z patternu Singleton zamień używanie tablicy `users` w pliku `/routes/admin.ts` na korzystanie z metod owej klasy.
 
-// #l(1)
+*Może* ona wyglądać tak:
+- zdefiniowany typ `User` gdzieś poza klasą jako obiekt z wartościami
+- `#users: User[]`
+- `getUsers(): User[]`
+- `findUser(id: string): User | null`
+- `deleteUser(id: string): boolean // true jeśli usunięcie się powiodło - czyli użytkownik istniał`
+- `updateUser(id: string, data: UpdateUserData): User | null // UpdateUserData to osobny typ, który wszystkie wartości obiektu może mieć niezdefiniowane, więc wpisane '?:'. Zwraca null gdy nie znaleziono użytkownika`
 
+#l(2)
+Zamień typ `User` na klasę `User`, która w polach zapisuje o sobie informacje, a metody pozwalają na mutowanie jej danych. Dodaj do `User` metodę `toString` która zwraca obiekt z polami klasy. Usuń metody z klasy `UsersManager` które mutują użytkowników. Efektem powinna być możliwość wykonania kodu:
+
+
+```js
+const antek = usersManagerInstance.get("42")
+// JavaScript automatycznie będzie próbował wylogować instancję klasy w postaci drzewa obiektu. Aby wymusić wywołanie toString na klasie można albo ją wywołać robiąc antek.toString(), albo wywołać konkatenację stringów
+console.log(antek + "")
+antek.update({name: "Antonina"})
+console.log(antek + "")
+antek.delete()
+```
+
+#l(3)
+Dodaj pole `authToken` do klasy (bądź obiektu jeżeli nie zrobiłeś zadania 2) użytkownika o typie `string`.
+Dodaj nową metodę (lub funkcję) która nadpisze pole z `authToken` na nowo wygenerowany token, wykorzystując #link("https://nodejs.org/api/crypto.html")[api `crypto`].
+
+#l(4)
+Dodaj nowy router `auth`, w którym zaimplementujesz dwa endponity:
+
+- Endpoint `/auth/register` (ścieżka absolutna)
+  Metoda `POST`
+  Dane wejściowe (body): `{ name: string; email: string; password: string; }`
+  Wyjście: `{ success: true, id: <nowo wygenerowane id> }` lub `{ success: false, reason: string, code: number }`
+
+  Logika: Zakładamy, że w bazie każdy użytkownik musi mieć unikatowe e-maile. W przypadku, gdy e-mail jest zajęty powinniśmy zwrócić w `reason`: `Istnieje już użytkownik z tym e-mailem!` oraz `code`: `1`. Ten `code` jest używany wyłącznie przez sprawdzaczkę (flows w Postmanie), w rzeczywistości stosuje się zazwyczaj jakieś symbole oznaczające dany kod błędu, jak np. `USR_EMAIL_TAKEN` lub `USR_WRONG_PASS`. Te symbole mogą być arbitralnie wybierane, są używane przez frontend do np. wyświetlenia zlokalizowanej wiadomości i przeprowadzenia jakiejś konkretnej logiki. Np. zajęty e-mail > podświetlijmy e-mail na czerwono, bo jest zajęty, lub przenieśmy usera do logowania, skoro już użytkownik jest zarejestrowany na danych e-mailu (może się zdarzyć, że zapomniał że tworzył u nas konto x lat temu).
+
+- Endpoint `/auth/login`
+  Metoda `POST`
+  Dane wejściowe (body): `{ email: string; password: string; }`
+  Wyjście: `{ token: <User.authToken> }` lub `{ reason: string, code: number }`
+
+  Logika: znajdujemy usera z danym adresem e-mail. Jeżeli go nie ma, wyrzucamy błąd z reason `Błędny adres e-mail lub hasło!` i kodem `1`
+  Jeżeli user jest, porównujemy czy `password` jest takie same. Jeżeli nie, wyrzucamy błąd: `reason` jest taki jak wyżej, a kod `2`.
+  Jeżeli tak, korzystamy z metody/funkcji z zadania 3 do podmiany tokenu na świeży i go zwracamy w obiekcie.
+
+#line(length: 100%)
+
+== Kontekst do wiadomości błędu
+
+Logując się na jakąś stronę możliwe że kiedyś się sfrustrowałeś na bardzo ogólne wiadomości błędu, np. `Błędna nazwa użytkownika lub hasło`, `Wysłano kod resetujący` (podczas gdy żaden kod nie został wysłany, bo dany użytkownik nie istnieje lub backend wykrył próbę oszustwa). Takie wiadomości to nie przejaw lenistwa u programistów aplikacji webowych (a przynajmniej można mieć taką nadzieję), a skutecznego projektowania aplikacji tak, by nie przedstawiać większej porcji informacji niż to potrzebne.
+
+Załóżmy że osoba z niecnymi intencjami chce sprawdzić, czy `jeff.bezos@amazon.com` ma konto na forum fanów gry Angry Birds. Wchodzi więc w zarejestruj, zakłada nowe konto na adres który chce zbadać, a tu nagle BŁĄD! Adres e-mail zajęty! Właśnie programiści tego forum udostępnili dane odnośnie jednego z ich użytkowników, nie wiedząc i nie powiadamiając o tym użytkownika. Takich przypadków można mnożyć, większość występuje podczas `auth flow`, czyli przeprowadzania autentykacji użytkownika, więc logowanie, rejestrowanie, zmiana hasła i wszystkie czynności wokół.
+
+A więc jak to zrobić poprawnie? W przypadku tego forum, można by było zamiast błędu zwrócić, że akcja się powiodła `Konto zarejestrowane! Przejdź do strony Zaloguj się`. Tutaj jednak znowu leży błąd, bo hakier przejdzie do zaloguj się, spróbuje wprowadzić e-mail i hasło (bo przecież dopiero co się dzięki tym danym pomyślnie zarejestrował) i zmierzy się z błędem `Błędny e-mail lub hasło!`. Skoro błędny e-mail lub hasło, a e-mail nie może być błędny bo dopiero co stworzył konto, to właśnie hasło musi być błędne. Najprawidłowszym postępowaniem w tej sytuacji jest wiadomość `Wysłano link aktywacyjny. Sprawdź e-mail.`
+
+Ważne aby w tej sytuacji być konsekwentnym, czyli gdybyśmy nie mieli podłączonego serwisu wysyłania e-mailów nie zrobić następującego błędu:
+- E-mail zajęty? Kłamiemy że wysłaliśmy e-mail: `Sprawdź skrzynkę!`
+- E-mail nie był zajęty, założyliśmy konto? Mówimy prawdę: `Konto zarejestrowane!`
+
+Hakier może bowiem założyć prawdziwe konto, sprawdzić jak wyglądają wiadomości, odpowiedzi z backendu, a później na swoim celu będzie porównywał. Jak coś będzie się różniło od tego nowego konta, to będzie wiedział że konto już istniało.
+
+Po tej lekturze mógłbyś chcieć wrócić do endpointu `/auth/register` i zmienić wiadomość `Istnieje już użytkownik z tym e-mailem` na coś innego. Jeżeli tak pomyślałeś to dobrze, ale nie rób tego. Tutaj się uczymy, a z kodu błędu korzysta sprawdzaczka podczas automatycznego wykonywania zapytań potokowych. W aplikacjach produkcyjnych, jest to jednak absolutny must-have, a podatność aplikacji które mają to źle zrobione nazywa się `information disclosure`.
+
+Jest to bardzo znana podatność, jest też na jej zwalczanie kładzony spory nacisk. Powstało też parę memów:
+
+#image("4/meme.jpg", height: 200pt)
+#image("4/meme2.jpg", height: 200pt)
+
+#l(5)
+Zmień logikę middleware `isAuthorized` aby pozyskiwał token z headeru `Authorization`, splitując tekst po spacji i biorąc z niego drugi element. A więc z `Bearer tajnyToken` wybierzemy `tajnyToken`. Następnie sprawdź czy jakikolwiek użytkownik ma dany token, jeżeli tak to wstaw tego usera do #link("https://hono.dev/docs/guides/middleware#extending-the-context-in-middleware")[kontekstu Hono].
+
+Dodaj nowy router `/dashboard`, użyj w nim middleware `isAuthorized`. Utwórz nowy endpoint `GET` `/dashboard/` zwracający niewrażliwe dane o użytkowniku, a więc `{ id: string; name: string; email: string }`
+
+Ciąg dalszy nastąpi
 
 #pagebreak()
 
